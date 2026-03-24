@@ -1,17 +1,27 @@
 import pygame
 import random
 from enum import Enum
+from collections import namedtuple
 
 # Initialize Pygame
 pygame.init()
 
 # Constants
-SCREEN_WIDTH = 1000
-SCREEN_HEIGHT = 700
+WINDOW_WIDTH = 1000
+WINDOW_HEIGHT = 700
 FPS = 60
-BG_COLOR = (0, 100, 0)
-TEXT_COLOR = (255, 255, 255)
-ACCENT_COLOR = (255, 215, 0)
+
+# Colors
+COLOR_GREEN = (34, 139, 34)
+COLOR_WHITE = (255, 255, 255)
+COLOR_BLACK = (0, 0, 0)
+COLOR_RED = (220, 20, 60)
+COLOR_GOLD = (255, 215, 0)
+COLOR_GRAY = (200, 200, 200)
+COLOR_DARK_GRAY = (100, 100, 100)
+
+# Card
+Card = namedtuple('Card', ['suit', 'rank'])
 
 class GameState(Enum):
     BETTING = 1
@@ -20,42 +30,55 @@ class GameState(Enum):
     DEALER_TURN = 4
     GAME_OVER = 5
 
-class Card:
-    SUITS = ['♠', '♥', '♦', '♣']
-    RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']
-    RANK_VALUES = {'A': 11, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 10, 'Q': 10, 'K': 10}
-    
-    def __init__(self, rank, suit):
-        self.rank = rank
-        self.suit = suit
-    
-    def __repr__(self):
-        return f"{self.rank}{self.suit}"
-
-class Deck:
+class BlackjackGame:
     def __init__(self):
-        self.cards = [Card(rank, suit) for suit in Card.SUITS for rank in Card.RANKS]
-        random.shuffle(self.cards)
+        self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+        pygame.display.set_caption("Blackjack")
+        self.clock = pygame.time.Clock()
+        self.font_large = pygame.font.Font(None, 72)
+        self.font_medium = pygame.font.Font(None, 48)
+        self.font_small = pygame.font.Font(None, 32)
+        self.font_tiny = pygame.font.Font(None, 24)
+        
+        self.reset_game()
     
-    def draw(self):
-        if len(self.cards) < 10:
-            self.__init__()  # Reshuffle when low
-        return self.cards.pop()
-
-class Hand:
-    def __init__(self):
-        self.cards = []
+    def reset_game(self):
+        self.deck = self.create_deck()
+        self.player_hand = []
+        self.dealer_hand = []
+        self.player_balance = 1000
+        self.current_bet = 0
+        self.state = GameState.BETTING
+        self.bet_input = ""
+        self.message = "Enter bet amount (10-500):"
+        self.result = ""
     
-    def add_card(self, card):
-        self.cards.append(card)
+    def create_deck(self):
+        suits = ['♠', '♥', '♦', '♣']
+        ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']
+        deck = [Card(suit, rank) for suit in suits for rank in ranks]
+        random.shuffle(deck)
+        return deck
     
-    def value(self):
-        total = 0
-        aces = 0
-        for card in self.cards:
-            total += Card.RANK_VALUES[card.rank]
-            if card.rank == 'A':
-                aces += 1
+    def reshuffle_if_needed(self):
+        if len(self.deck) < 10:
+            self.deck = self.create_deck()
+    
+    def deal_card(self):
+        self.reshuffle_if_needed()
+        return self.deck.pop()
+    
+    def card_value(self, rank):
+        if rank in ['J', 'Q', 'K']:
+            return 10
+        elif rank == 'A':
+            return 11
+        else:
+            return int(rank)
+    
+    def hand_value(self, hand):
+        total = sum(self.card_value(card.rank) for card in hand)
+        aces = sum(1 for card in hand if card.rank == 'A')
         
         while total > 21 and aces > 0:
             total -= 10
@@ -63,204 +86,203 @@ class Hand:
         
         return total
     
-    def is_blackjack(self):
-        return len(self.cards) == 2 and self.value() == 21
+    def is_blackjack(self, hand):
+        return len(hand) == 2 and self.hand_value(hand) == 21
     
-    def is_bust(self):
-        return self.value() > 21
-
-class BlackjackGame:
-    def __init__(self):
-        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-        pygame.display.set_caption("Blackjack")
-        self.clock = pygame.time.Clock()
-        self.font_large = pygame.font.Font(None, 48)
-        self.font_medium = pygame.font.Font(None, 36)
-        self.font_small = pygame.font.Font(None, 24)
-        
-        self.deck = Deck()
-        self.player_hand = Hand()
-        self.dealer_hand = Hand()
-        self.player_balance = 1000
-        self.current_bet = 0
-        self.state = GameState.BETTING
-        self.message = "Enter bet amount (10-500) and press ENTER"
-        self.bet_input = ""
-        self.game_result = ""
-        
-    def handle_events(self):
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                return False
-            
-            if event.type == pygame.KEYDOWN:
-                if self.state == GameState.BETTING:
-                    if event.key == pygame.K_RETURN and self.bet_input:
-                        try:
-                            bet = int(self.bet_input)
-                            if 10 <= bet <= min(500, self.player_balance):
-                                self.current_bet = bet
-                                self.bet_input = ""
-                                self.start_round()
-                            else:
-                                self.message = f"Bet must be 10-{min(500, self.player_balance)}"
-                        except:
-                            self.message = "Invalid bet amount"
-                    elif event.key == pygame.K_BACKSPACE:
-                        self.bet_input = self.bet_input[:-1]
-                    elif event.unicode.isdigit():
-                        if len(self.bet_input) < 3:
-                            self.bet_input += event.unicode
-                
-                elif self.state == GameState.PLAYING:
-                    if event.key == pygame.K_h:
-                        self.player_hand.add_card(self.deck.draw())
-                        if self.player_hand.is_bust():
-                            self.end_round()
-                    elif event.key == pygame.K_s:
-                        self.state = GameState.DEALER_TURN
-                
-                elif self.state == GameState.GAME_OVER:
-                    if event.key == pygame.K_SPACE:
-                        self.state = GameState.BETTING
-                        self.message = "Enter bet amount (10-500) and press ENTER"
-        
-        return True
+    def handle_betting_input(self, event):
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_RETURN and self.bet_input:
+                try:
+                    bet = int(self.bet_input)
+                    if 10 <= bet <= min(500, self.player_balance):
+                        self.current_bet = bet
+                        self.player_balance -= bet
+                        self.state = GameState.DEALING
+                        self.deal_initial_hands()
+                        self.message = ""
+                    else:
+                        self.message = f"Bet must be 10-{min(500, self.player_balance)}"
+                        self.bet_input = ""
+                except ValueError:
+                    self.message = "Invalid input. Enter a number."
+                    self.bet_input = ""
+            elif event.key == pygame.K_BACKSPACE:
+                self.bet_input = self.bet_input[:-1]
+            elif event.unicode.isdigit():
+                if len(self.bet_input) < 3:
+                    self.bet_input += event.unicode
     
-    def start_round(self):
-        self.player_hand = Hand()
-        self.dealer_hand = Hand()
-        self.player_hand.add_card(self.deck.draw())
-        self.player_hand.add_card(self.deck.draw())
-        self.dealer_hand.add_card(self.deck.draw())
-        self.dealer_hand.add_card(self.deck.draw())
-        self.game_result = ""
+    def deal_initial_hands(self):
+        self.player_hand = [self.deal_card(), self.deal_card()]
+        self.dealer_hand = [self.deal_card(), self.deal_card()]
+        self.state = GameState.PLAYING
+        self.result = ""
         
-        if self.player_hand.is_blackjack():
-            self.state = GameState.DEALER_TURN
-        else:
-            self.state = GameState.PLAYING
-            self.message = "Hit (H) or Stand (S)?"
+        if self.is_blackjack(self.player_hand):
+            self.state = GameState.GAME_OVER
+            self.result = "BLACKJACK! You win!"
+            self.player_balance += self.current_bet * 2.5
     
-    def end_round(self):
-        self.state = GameState.DEALER_TURN
+    def handle_playing_input(self, event):
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_h:  # Hit
+                self.player_hand.append(self.deal_card())
+                if self.hand_value(self.player_hand) > 21:
+                    self.state = GameState.GAME_OVER
+                    self.result = "BUST! You lose."
+            elif event.key == pygame.K_s:  # Stand
+                self.state = GameState.DEALER_TURN
+                self.play_dealer()
     
-    def dealer_play(self):
-        while self.dealer_hand.value() < 17:
-            self.dealer_hand.add_card(self.deck.draw())
+    def play_dealer(self):
+        while self.hand_value(self.dealer_hand) < 17:
+            self.dealer_hand.append(self.deal_card())
         
         self.determine_winner()
         self.state = GameState.GAME_OVER
     
     def determine_winner(self):
-        player_value = self.player_hand.value()
-        dealer_value = self.dealer_hand.value()
+        player_value = self.hand_value(self.player_hand)
+        dealer_value = self.hand_value(self.dealer_hand)
         
-        if self.player_hand.is_blackjack() and not self.dealer_hand.is_blackjack():
-            self.player_balance += int(self.current_bet * 1.5)
-            self.game_result = f"BLACKJACK! Won ${int(self.current_bet * 1.5)}"
-        elif player_value > 21:
-            self.player_balance -= self.current_bet
-            self.game_result = f"BUST! Lost ${self.current_bet}"
-        elif dealer_value > 21:
-            self.player_balance += self.current_bet
-            self.game_result = f"Dealer BUST! Won ${self.current_bet}"
+        if dealer_value > 21:
+            self.result = "Dealer busts! You win!"
+            self.player_balance += self.current_bet * 2
         elif player_value > dealer_value:
-            self.player_balance += self.current_bet
-            self.game_result = f"You WIN! Won ${self.current_bet}"
+            self.result = "You win!"
+            self.player_balance += self.current_bet * 2
         elif dealer_value > player_value:
-            self.player_balance -= self.current_bet
-            self.game_result = f"Dealer WINS! Lost ${self.current_bet}"
+            self.result = "Dealer wins."
         else:
-            self.game_result = "PUSH (Tie)"
+            self.result = "Push (Tie)."
+            self.player_balance += self.current_bet
+    
+    def handle_game_over_input(self, event):
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
+            if self.player_balance > 0:
+                self.reset_game()
+            else:
+                self.message = "Game Over! No balance left."
+    
+    def handle_input(self):
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return False
+            
+            if self.state == GameState.BETTING:
+                self.handle_betting_input(event)
+            elif self.state == GameState.PLAYING:
+                self.handle_playing_input(event)
+            elif self.state == GameState.GAME_OVER:
+                self.handle_game_over_input(event)
         
-        if self.player_balance <= 0:
-            self.game_result += " - GAME OVER!"
+        return True
     
     def draw_card(self, card, x, y):
         card_width, card_height = 80, 120
-        pygame.draw.rect(self.screen, (255, 255, 255), (x, y, card_width, card_height))
-        pygame.draw.rect(self.screen, (0, 0, 0), (x, y, card_width, card_height), 2)
+        pygame.draw.rect(self.screen, COLOR_WHITE, (x, y, card_width, card_height))
+        pygame.draw.rect(self.screen, COLOR_BLACK, (x, y, card_width, card_height), 2)
         
-        color = (255, 0, 0) if card.suit in ['♥', '♦'] else (0, 0, 0)
+        is_red = card.suit in ['♥', '♦']
+        color = COLOR_RED if is_red else COLOR_BLACK
+        
         rank_text = self.font_medium.render(card.rank, True, color)
         suit_text = self.font_large.render(card.suit, True, color)
         
         self.screen.blit(rank_text, (x + 10, y + 10))
-        self.screen.blit(suit_text, (x + 20, y + 60))
+        self.screen.blit(suit_text, (x + 20, y + 50))
     
-    def draw_back_card(self, x, y):
+    def draw_card_back(self, x, y):
         card_width, card_height = 80, 120
-        pygame.draw.rect(self.screen, (0, 50, 100), (x, y, card_width, card_height))
-        pygame.draw.rect(self.screen, (100, 100, 100), (x, y, card_width, card_height), 3)
+        pygame.draw.rect(self.screen, COLOR_DARK_GRAY, (x, y, card_width, card_height))
+        pygame.draw.rect(self.screen, COLOR_GOLD, (x, y, card_width, card_height), 3)
     
-    def render(self):
-        self.screen.fill(BG_COLOR)
+    def draw(self):
+        self.screen.fill(COLOR_GREEN)
         
-        # Balance and bet
-        balance_text = self.font_medium.render(f"Balance: ${self.player_balance}", True, ACCENT_COLOR)
+        # Title
+        title = self.font_large.render("BLACKJACK", True, COLOR_GOLD)
+        self.screen.blit(title, (WINDOW_WIDTH // 2 - title.get_width() // 2, 20))
+        
+        # Balance
+        balance_text = self.font_small.render(f"Balance: ${self.player_balance}", True, COLOR_WHITE)
         self.screen.blit(balance_text, (20, 20))
         
         if self.state == GameState.BETTING:
-            title = self.font_large.render("BLACKJACK", True, ACCENT_COLOR)
-            self.screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 50))
-            
-            msg = self.font_small.render(self.message, True, TEXT_COLOR)
-            self.screen.blit(msg, (SCREEN_WIDTH // 2 - msg.get_width() // 2, 150))
-            
-            bet_display = self.font_medium.render(f"Bet: ${self.bet_input}", True, TEXT_COLOR)
-            self.screen.blit(bet_display, (SCREEN_WIDTH // 2 - bet_display.get_width() // 2, 250))
-            
-            info = self.font_small.render("Press ENTER to confirm bet", True, TEXT_COLOR)
-            self.screen.blit(info, (SCREEN_WIDTH // 2 - info.get_width() // 2, 350))
-        
+            self.draw_betting_screen()
         else:
-            # Dealer hand
-            dealer_text = self.font_medium.render("DEALER", True, ACCENT_COLOR)
-            self.screen.blit(dealer_text, (50, 50))
-            for i, card in enumerate(self.dealer_hand.cards):
-                if self.state == GameState.PLAYING and i == 1:
-                    self.draw_back_card(50 + i * 100, 100)
-                else:
-                    self.draw_card(card, 50 + i * 100, 100)
-            
-            if self.state != GameState.PLAYING:
-                dealer_value_text = self.font_medium.render(f"Value: {self.dealer_hand.value()}", True, TEXT_COLOR)
-                self.screen.blit(dealer_value_text, (50, 240))
-            
-            # Player hand
-            player_text = self.font_medium.render("YOUR HAND", True, ACCENT_COLOR)
-            self.screen.blit(player_text, (50, 350))
-            for i, card in enumerate(self.player_hand.cards):
-                self.draw_card(card, 50 + i * 100, 400)
-            
-            player_value_text = self.font_medium.render(f"Value: {self.player_hand.value()}", True, TEXT_COLOR)
-            self.screen.blit(player_value_text, (50, 540))
-            
-            # Message
-            if self.state == GameState.PLAYING:
-                msg = self.font_small.render(self.message, True, TEXT_COLOR)
-                self.screen.blit(msg, (SCREEN_WIDTH // 2 - msg.get_width() // 2, 600))
-            
-            elif self.state == GameState.GAME_OVER:
-                result = self.font_large.render(self.game_result, True, ACCENT_COLOR)
-                self.screen.blit(result, (SCREEN_WIDTH // 2 - result.get_width() // 2, 600))
-                
-                if self.player_balance > 0:
-                    continue_text = self.font_small.render("Press SPACE to continue", True, TEXT_COLOR)
-                    self.screen.blit(continue_text, (SCREEN_WIDTH // 2 - continue_text.get_width() // 2, 650))
+            self.draw_game_screen()
         
         pygame.display.flip()
+    
+    def draw_betting_screen(self):
+        prompt = self.font_medium.render(self.message, True, COLOR_WHITE)
+        self.screen.blit(prompt, (WINDOW_WIDTH // 2 - prompt.get_width() // 2, 150))
+        
+        input_box_rect = pygame.Rect(WINDOW_WIDTH // 2 - 100, 280, 200, 50)
+        pygame.draw.rect(self.screen, COLOR_WHITE, input_box_rect)
+        pygame.draw.rect(self.screen, COLOR_GOLD, input_box_rect, 3)
+        
+        input_text = self.font_medium.render(self.bet_input, True, COLOR_BLACK)
+        self.screen.blit(input_text, (input_box_rect.x + 10, input_box_rect.y + 5))
+        
+        instructions = self.font_small.render("Press ENTER to confirm", True, COLOR_WHITE)
+        self.screen.blit(instructions, (WINDOW_WIDTH // 2 - instructions.get_width() // 2, 380))
+    
+    def draw_game_screen(self):
+        # Dealer section
+        dealer_label = self.font_small.render("Dealer", True, COLOR_WHITE)
+        self.screen.blit(dealer_label, (50, 100))
+        
+        for i, card in enumerate(self.dealer_hand):
+            if self.state == GameState.DEALER_TURN or len(self.dealer_hand) == 2 and i > 0:
+                self.draw_card(card, 50 + i * 100, 140)
+            else:
+                if i == 0:
+                    self.draw_card(card, 50, 140)
+                else:
+                    self.draw_card_back(50 + i * 100, 140)
+        
+        if self.state == GameState.GAME_OVER:
+            dealer_value = self.hand_value(self.dealer_hand)
+            dealer_score = self.font_small.render(f"Value: {dealer_value}", True, COLOR_GOLD)
+            self.screen.blit(dealer_score, (50, 280))
+        
+        # Player section
+        player_label = self.font_small.render("Player", True, COLOR_WHITE)
+        self.screen.blit(player_label, (50, 350))
+        
+        for i, card in enumerate(self.player_hand):
+            self.draw_card(card, 50 + i * 100, 390)
+        
+        player_value = self.hand_value(self.player_hand)
+        player_score = self.font_small.render(f"Value: {player_value}", True, COLOR_GOLD)
+        self.screen.blit(player_score, (50, 530))
+        
+        # Bet info
+        bet_text = self.font_small.render(f"Current Bet: ${self.current_bet}", True, COLOR_WHITE)
+        self.screen.blit(bet_text, (WINDOW_WIDTH - 300, 100))
+        
+        # Controls or result
+        if self.state == GameState.PLAYING:
+            controls = self.font_small.render("H (Hit)  S (Stand)", True, COLOR_WHITE)
+            self.screen.blit(controls, (WINDOW_WIDTH // 2 - controls.get_width() // 2, 600))
+        elif self.state == GameState.GAME_OVER:
+            result = self.font_medium.render(self.result, True, COLOR_GOLD)
+            self.screen.blit(result, (WINDOW_WIDTH // 2 - result.get_width() // 2, 580))
+            
+            if self.player_balance > 0:
+                continue_text = self.font_small.render("Press SPACE to continue", True, COLOR_WHITE)
+                self.screen.blit(continue_text, (WINDOW_WIDTH // 2 - continue_text.get_width() // 2, 640))
+            else:
+                game_over = self.font_medium.render("Game Over!", True, COLOR_RED)
+                self.screen.blit(game_over, (WINDOW_WIDTH // 2 - game_over.get_width() // 2, 640))
     
     def run(self):
         running = True
         while running:
-            running = self.handle_events()
-            
-            if self.state == GameState.DEALER_TURN:
-                self.dealer_play()
-            
-            self.render()
+            running = self.handle_input()
+            self.draw()
             self.clock.tick(FPS)
         
         pygame.quit()
